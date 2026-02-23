@@ -6,6 +6,7 @@ import json
 from dotenv import load_dotenv
 import os
 import requests
+import httpx
 
 load_dotenv('.env_development')
 
@@ -86,79 +87,90 @@ Do not ask the user to just type "YES" to confirm. It should be more conversatio
 SESSIONS = {}
 
 SENDBLUE_CLIENT = SendblueAPI(
-  api_key='525d96abaa8c3b6cb01157ccf5d3bb96',
-  api_secret='5b6707dfe8529fdf8d256189a8741716')
+    api_key='525d96abaa8c3b6cb01157ccf5d3bb96',
+    api_secret='5b6707dfe8529fdf8d256189a8741716')
+
 
 async def get_messages(from_number, message):
-  print(from_number, message)
-  messages = None
-  if from_number not in SESSIONS:
-    new_chat = SESSIONS[from_number] = {'messages': []}
-    new_chat['messages'].append({
-      'role': 'system',
-      'content': SYSTEM_PROMPT
+    print(from_number, message)
+    messages = None
+    if from_number not in SESSIONS:
+        new_chat = SESSIONS[from_number] = {'messages': []}
+        new_chat['messages'].append({
+            'role': 'system',
+            'content': SYSTEM_PROMPT
+        })
+        messages = new_chat['messages']
+    else:
+        messages = SESSIONS[from_number]['messages']
+    messages.append({
+        'role': 'user',
+        'content': message
     })
-    messages = new_chat['messages']
-  else:
-    messages = SESSIONS[from_number]['messages']
-  messages.append({
-    'role': 'user',
-    'content': message
-  })
-  return messages
-  
+    return messages
+
+
 async def get_responses(from_number, message):
-  messages = await get_messages(from_number, message)
-  response = OPENAI_CLIENT.chat.completions.create(
-    model='gpt-5.1',
-    messages=messages,
-    service_tier='priority',
-    response_format={
-      'type': 'json_object'
-    }
-  )
-  print(response.choices[0].message.content)
-  return response.choices[0].message.content
+    messages = await get_messages(from_number, message)
+    response = OPENAI_CLIENT.chat.completions.create(
+        model='gpt-5.1',
+        messages=messages,
+        service_tier='priority',
+        response_format={
+            'type': 'json_object'
+        }
+    )
+    print(response.choices[0].message.content)
+    return response.choices[0].message.content
+
 
 async def start_typing(to_number):
-  response = SENDBLUE_CLIENT.typing_indicators.send(
-    from_number=FROM_NUMBER,
-    number=to_number
-  )
-  print(response)
+    response = SENDBLUE_CLIENT.typing_indicators.send(
+        from_number=FROM_NUMBER,
+        number=to_number
+    )
+    print(response)
+
 
 async def process_chat(from_number, message):
-  to_number = from_number
-  response = requests.post(
-    'https://api.sendblue.co/api/mark-read',
-    json={
-        'number': to_number,
-        'from_number': FROM_NUMBER
-    },
-    headers={
-        'sb-api-key-id': os.environ.get('SENDBLUE_API_KEY_ID'),
-        'sb-api-secret-key': os.environ.get('SENDBLUE_API_SECRET_KEY')
-    }
-  )
-  print(response.json())
-  await start_typing(to_number)
-  responses = await get_responses(from_number, message)
-  response_messages = json.loads(responses)
-  message_count = len(response_messages['messages'])
-  current_message = 1
-  for response in response_messages['messages']:
-    SENDBLUE_CLIENT.messages.send(
-      content=response,
-      from_number=FROM_NUMBER,
-      number=to_number
-    )
-    SESSIONS[from_number]['messages'].append({
-      'role': 'assistant',
-      'content': response
-    })
-    if current_message < message_count:
-      await start_typing(to_number)
-    current_message += 1
-    sleep(1.5)
-  return {'success': True}
-    
+    to_number = from_number
+    # response = requests.post(
+    #   'https://api.sendblue.co/api/mark-read',
+    #   json={
+    #       'number': to_number,
+    #       'from_number': FROM_NUMBER
+    #   },
+    #   headers={
+    #       'sb-api-key-id': os.environ.get('SENDBLUE_API_KEY_ID'),
+    #       'sb-api-secret-key': os.environ.get('SENDBLUE_API_SECRET_KEY')
+    #   }
+    # )
+    # print(response.json())
+    response = SENDBLUE_CLIENT.post(
+        '/mark-read',
+        body={
+            'number': to_number,
+            'from_number': FROM_NUMBER
+        },
+        cast_to=httpx.Response)
+    print(response.json())
+    await start_typing(to_number)
+    responses = await get_responses(from_number, message)
+    response_messages = json.loads(responses)
+    message_count = len(response_messages['messages'])
+    current_message = 1
+    for response in response_messages['messages']:
+        SENDBLUE_CLIENT.messages.send(
+            content=response,
+            from_number=FROM_NUMBER,
+            number=to_number
+        )
+        SESSIONS[from_number]['messages'].append({
+            'role': 'assistant',
+            'content': response
+        })
+        if current_message < message_count:
+            await start_typing(to_number)
+        current_message += 1
+        sleep(1.5)
+    return {'success': True}
