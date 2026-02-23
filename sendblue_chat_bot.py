@@ -1,12 +1,17 @@
-from tracemalloc import start
-from sendblue_api import SendblueAPI
-from openai import OpenAI
-from time import sleep
+"""SendBlue iMessage chatbot for car service appointment scheduling.
+
+Manages conversational AI sessions using OpenAI and delivers responses
+via SendBlue's iMessage API with typing indicators and read receipts.
+"""
+
 import json
-from dotenv import load_dotenv
 import os
-import requests
+from time import sleep
+
 import httpx
+from dotenv import load_dotenv
+from openai import OpenAI
+from sendblue_api import SendblueAPI
 
 load_dotenv('.env_development')
 
@@ -74,8 +79,8 @@ Required appointment fields checklist (must be collected before confirmation):
 - date_time (within Mon-Fri, 8 AM–6 PM)
 
 Examples of good behavior (style only, not exact wording):
-- Greeting only -> friendly greeting + “How can I help?”
-- “Need an oil change” -> ask for vehicle details + preferred day/time
+- Greeting only -> friendly greeting + "How can I help?"
+- "Need an oil change" -> ask for vehicle details + preferred day/time
 - Out-of-hours request -> apologize briefly + ask for a weekday 8–6 time
 - All info collected -> concise summary + confirmation request
 - User confirms -> appointment is made + looking forward to seeing them
@@ -84,14 +89,28 @@ Do not ask the user to just type "YES" to confirm. It should be more conversatio
 
 """
 
-SESSIONS = {}
+SESSIONS: dict[str, dict] = {}
 
 SENDBLUE_CLIENT = SendblueAPI(
-    api_key='525d96abaa8c3b6cb01157ccf5d3bb96',
-    api_secret='5b6707dfe8529fdf8d256189a8741716')
+    api_key=os.environ.get('SENDBLUE_API_KEY_ID'),
+    api_secret=os.environ.get('SENDBLUE_API_SECRET_KEY')
+)
 
 
-async def get_messages(from_number, message):
+async def get_messages(from_number: str, message: str) -> list[dict[str, str]]:
+    """Retrieve or initialize the conversation history for a phone number.
+
+    Looks up the session by phone number. If no session exists, creates one
+    with the system prompt prepended. Appends the new user message to the
+    history and returns the full message list.
+
+    Args:
+        from_number: The sender's phone number (used as session key).
+        message: The incoming message text from the user.
+
+    Returns:
+        The full list of conversation messages for the OpenAI API.
+    """
     print(from_number, message)
     messages = None
     if from_number not in SESSIONS:
@@ -110,7 +129,19 @@ async def get_messages(from_number, message):
     return messages
 
 
-async def get_responses(from_number, message):
+async def get_responses(from_number: str, message: str) -> str:
+    """Generate AI responses for an incoming message.
+
+    Retrieves the conversation history and sends it to the OpenAI API,
+    which returns a JSON string containing 1-3 SMS-style messages.
+
+    Args:
+        from_number: The sender's phone number.
+        message: The incoming message text from the user.
+
+    Returns:
+        A JSON string matching ``{"messages": ["...", ...]}``.
+    """
     messages = await get_messages(from_number, message)
     response = OPENAI_CLIENT.chat.completions.create(
         model='gpt-5.1',
@@ -124,7 +155,12 @@ async def get_responses(from_number, message):
     return response.choices[0].message.content
 
 
-async def start_typing(to_number):
+async def start_typing(to_number: str) -> None:
+    """Send a typing indicator to the recipient via SendBlue.
+
+    Args:
+        to_number: The recipient's phone number.
+    """
     response = SENDBLUE_CLIENT.typing_indicators.send(
         from_number=FROM_NUMBER,
         number=to_number
@@ -132,20 +168,21 @@ async def start_typing(to_number):
     print(response)
 
 
-async def process_chat(from_number, message):
+async def process_chat(from_number: str, message: str) -> dict[str, bool]:
+    """Process an incoming message through the full chatbot pipeline.
+
+    Executes the complete message flow: marks the incoming message as read,
+    shows a typing indicator, generates AI responses via OpenAI, and sends
+    each response back through SendBlue with delays between messages.
+
+    Args:
+        from_number: The sender's phone number.
+        message: The incoming message text.
+
+    Returns:
+        A dict ``{"success": True}`` on completion.
+    """
     to_number = from_number
-    # response = requests.post(
-    #   'https://api.sendblue.co/api/mark-read',
-    #   json={
-    #       'number': to_number,
-    #       'from_number': FROM_NUMBER
-    #   },
-    #   headers={
-    #       'sb-api-key-id': os.environ.get('SENDBLUE_API_KEY_ID'),
-    #       'sb-api-secret-key': os.environ.get('SENDBLUE_API_SECRET_KEY')
-    #   }
-    # )
-    # print(response.json())
     response = SENDBLUE_CLIENT.post(
         '/api/mark-read',
         body={
