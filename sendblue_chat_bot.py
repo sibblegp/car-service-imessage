@@ -147,7 +147,7 @@ async def process_chat(from_number, message):
     # )
     # print(response.json())
     response = SENDBLUE_CLIENT.post(
-        '/mark-read',
+        '/api/mark-read',
         body={
             'number': to_number,
             'from_number': FROM_NUMBER
