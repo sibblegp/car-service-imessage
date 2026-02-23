@@ -3,8 +3,12 @@ from sendblue_api import SendblueAPI
 from openai import OpenAI
 from time import sleep
 import json
+from dotenv import load_dotenv
+import os
 
-OPENAI_API_KEY = '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'
+load_dotenv('.env_development')
+
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
 OPENAI_CLIENT = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -39,6 +43,8 @@ Behavior rules:
 Don't ask for all information at once. Ask for one group (i.e. car info, service info, scheduled date/time) of information at a time.
 Be friendly and conversational. Make comments about the information like if service is significant or if it is a nice car for example. Don't repeat yourself.
 
+Prefer more short messages over longer messages. Style everything as if a human actually typed it out instead of a bot.
+
 Texting format requirements:
 - Respond in strict JSON only.
 - Output must match exactly this schema:
@@ -70,7 +76,11 @@ Examples of good behavior (style only, not exact wording):
 - “Need an oil change” -> ask for vehicle details + preferred day/time
 - Out-of-hours request -> apologize briefly + ask for a weekday 8–6 time
 - All info collected -> concise summary + confirmation request
-- User confirms -> appointment is made + looking forward to seeing them"""
+- User confirms -> appointment is made + looking forward to seeing them
+
+Do not ask the user to just type "YES" to confirm. It should be more conversational and friendly. Again, they should feel like they are talking to a human.
+
+"""
 
 SESSIONS = {}
 
@@ -99,7 +109,7 @@ async def get_messages(from_number, message):
 async def get_responses(from_number, message):
   messages = await get_messages(from_number, message)
   response = OPENAI_CLIENT.chat.completions.create(
-    model='gpt-5-mini',
+    model='gpt-5.1',
     messages=messages,
     service_tier='priority',
     response_format={
