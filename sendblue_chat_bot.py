@@ -5,6 +5,7 @@ from time import sleep
 import json
 from dotenv import load_dotenv
 import os
+import requests
 
 load_dotenv('.env_development')
 
@@ -128,6 +129,18 @@ async def start_typing(to_number):
 
 async def process_chat(from_number, message):
   to_number = from_number
+  response = requests.post(
+    'https://api.sendblue.co/api/mark-read',
+    json={
+        'number': to_number,
+        'from_number': FROM_NUMBER
+    },
+    headers={
+        'sb-api-key-id': os.environ.get('SENDBLUE_API_KEY_ID'),
+        'sb-api-secret-key': os.environ.get('SENDBLUE_API_SECRET_KEY')
+    }
+  )
+  print(response.json())
   await start_typing(to_number)
   responses = await get_responses(from_number, message)
   response_messages = json.loads(responses)
